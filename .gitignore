@@ -1,0 +1,12 @@
+# Ignorar ambiente virtual
+.venv/
+
+# Ignorar arquivos temporários
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.swo
+.ipynb_checkpoints/
+
