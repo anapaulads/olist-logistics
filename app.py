@@ -1,311 +1,270 @@
 import streamlit as st
 import pandas as pd
-import joblib
 import plotly.express as px
-import plotly.graph_objects as go
+import json
 
-# ==============================================================================
-# 1. CONFIGURAÇÃO E ESTILO (CORRIGIDO)
-# ==============================================================================
 st.set_page_config(
-    page_title="Olist Logistics Control Tower",
+    page_title="Olist Logistica Centro de Comando",
     page_icon="🚚",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Paleta de Cores Olist
-COLOR_PRIMARY = '#202652'  # Azul Marinho
-COLOR_SEC = '#fcce00'      # Amarelo
-COLOR_BG = '#f0f2f6'
+st.sidebar.image(
+    "https://d3hw41hpah8tvx.cloudfront.net/images/logo_ecossistema_66f532e37b.svg",
+    width=180
+)
 
-st.markdown(f"""
-    <style>
-    /* Ajuste de Fundo da Sidebar */
-    [data-testid="stSidebar"] {{
-        background-color: {COLOR_BG};
-    }}
-    
-    /* CORREÇÃO DOS CARDS (KPIs): 
-       Forçamos a cor do texto para PRETO (#333) para garantir leitura no fundo branco 
-    */
-    div[data-testid="metric-container"] {{
-        background-color: #ffffff;
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid {COLOR_PRIMARY};
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-    }}
-    
-    /* Força cor do rótulo e do valor para ficarem visíveis */
-    div[data-testid="metric-container"] > label {{
-        color: #333333 !important; 
-    }}
-    div[data-testid="metric-container"] > div {{
-        color: {COLOR_PRIMARY} !important;
-    }}
-    
-    /* Títulos */
-    h1, h2, h3 {{
-        color: {COLOR_PRIMARY};
-    }}
-    </style>
+PRIMARY = "#202652"
+WARNING = "#ff4b4b"
+
+st.markdown("""
+<style>
+div[data-testid="metric-container"] {
+    background-color: #ffffff;
+    padding: 15px;
+    border-radius: 10px;
+    border-left: 5px solid #202652;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.08);
+}
+h1, h2, h3 { color: #202652; }
+</style>
 """, unsafe_allow_html=True)
-
-# ==============================================================================
-# 2. CARGA DE DADOS
-# ==============================================================================
-
-
-@st.cache_resource
-def load_model():
-    return joblib.load('models/modelo_previsao_atraso_olist.pkl')
 
 
 @st.cache_data
 def load_data():
-    try:
-        # Carrega o CSV que você separou para o Dashboard (com nomes legíveis)
-        return pd.read_csv('data/data_dashboard_processed.csv')
-    except FileNotFoundError:
-        return None
+    return pd.read_csv(
+        "data/data_dashboard_processed.csv",
+        parse_dates=["data_aprovacao", "data_postagem"]
+    )
 
 
-model = load_model()
 df = load_data()
 
-# Lista Completa de UFs do Brasil
-TODOS_ESTADOS = sorted([
-    'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG',
-    'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
-])
+df["faturamento_pedido"] = df["preco_produto"] + df["valor_frete"]
 
-# ==============================================================================
-# 3. SIDEBAR (FILTROS)
-# ==============================================================================
-try:
-    st.sidebar.image(
-        "https://d3hw41hpah8tvx.cloudfront.net/images/logo_ecossistema_66f532e37b.svg", width=180)
-except:
-    st.sidebar.markdown("### 🚚 Olist Logistics")
+status_map = {
+    "delivered": "Aprovado",
+    "shipped": "Aprovado",
+    "approved": "Em Processamento",
+    "processing": "Em Processamento",
+    "invoiced": "Em Processamento",
+    "canceled": "Cancelado",
+    "unavailable": "Cancelado"
+}
+df["status_simplificado"] = df["status_pedido"].map(status_map)
 
-st.sidebar.markdown("---")
+df["flag_atraso"] = df["dias_atraso"] > 0
+
+df["tempo_processamento"] = (
+    df["data_postagem"] - df["data_aprovacao"]
+).dt.total_seconds() / 86400
+
 st.sidebar.header("Filtros Globais")
 
-if df is not None:
-    df_filtered = df.copy()
+status_options = (
+    df["status_simplificado"]
+    .dropna()
+    .astype(str)
+    .unique()
+)
 
-    # Filtro de Região (Estado Cliente)
-    sel_estado = st.sidebar.multiselect(
-        "Filtrar Estado (Destino):", TODOS_ESTADOS)
+status_sel = st.sidebar.multiselect(
+    "Status do Pedido",
+    sorted(status_options)
+)
 
-    # Filtro de Categoria
-    categorias = sorted(df['categoria_produto'].astype(str).unique())
-    sel_cat = st.sidebar.multiselect("Filtrar Categoria:", categorias)
+estados_sel = st.sidebar.multiselect(
+    "Estado do Cliente",
+    sorted(df["uf_cliente"].unique())
+)
 
-    if sel_estado:
-        df_filtered = df_filtered[df_filtered['uf_cliente'].isin(sel_estado)]
-    if sel_cat:
-        df_filtered = df_filtered[df_filtered['categoria_produto'].isin(
-            sel_cat)]
-else:
-    df_filtered = pd.DataFrame()
+df_f = df.copy()
 
-# ==============================================================================
-# 4. DASHBOARD E SIMULADOR
-# ==============================================================================
-tab1, tab2 = st.tabs(["📊 Visão de Negócio (BI)", "🤖 Simulador Preditivo (IA)"])
+if status_sel:
+    df_f = df_f[df_f["status_simplificado"].isin(status_sel)]
 
-# --- ABA 1: BUSINESS INTELLIGENCE ---
-with tab1:
-    if df is None:
-        st.error(
-            "⚠️ Erro: Arquivo 'tabela_dashboard.csv' não encontrado na pasta 'data'.")
-    else:
-        st.markdown("### 📊 Visão Geral da Operação")
+if estados_sel:
+    df_f = df_f[df_f["uf_cliente"].isin(estados_sel)]
 
-        # --- LINHA 1: KPIs GERAIS ---
-        col1, col2, col3, col4 = st.columns(4)
 
-        qtd_pedidos = len(df_filtered)
+def abreviar(valor):
+    if valor >= 1_000_000:
+        return f"{valor/1_000_000:.1f}M"
+    if valor >= 1_000:
+        return f"{valor/1_000:.1f}K"
+    return f"{valor:.0f}"
 
-        # Frete Médio (Se existir a coluna)
-        col_frete = 'valor_frete' if 'valor_frete' in df_filtered.columns else 'freight_value'
-        frete_medio = df_filtered[col_frete].mean(
-        ) if col_frete in df_filtered.columns else 0
 
-        # Taxa de Atraso
-        atrasados = df_filtered[df_filtered['dias_atraso'] > 0]
-        taxa_atraso = (len(atrasados) / qtd_pedidos *
-                       100) if qtd_pedidos > 0 else 0
+st.markdown("## 📊 Visão Geral da Operação")
 
-        # Taxa de Cancelamento (Se existir status)
-        col_status = 'status_pedido' if 'status_pedido' in df_filtered.columns else 'order_status'
-        if col_status in df_filtered.columns:
-            cancelados = df_filtered[df_filtered[col_status] == 'canceled']
-            taxa_cancel = (len(cancelados) / qtd_pedidos *
-                           100) if qtd_pedidos > 0 else 0
-        else:
-            taxa_cancel = 0
+col1, col2, col3, col4, col5 = st.columns(5)
 
-        col1.metric("📦 Total de Pedidos", f"{qtd_pedidos:,.0f}")
-        col2.metric("💰 Frete Médio", f"R$ {frete_medio:.2f}")
-        col3.metric("⚠️ Taxa de Atraso", f"{taxa_atraso:.1f}%")
-        col4.metric("🚫 Taxa Cancelamento",
-                    f"{taxa_cancel:.1f}%", delta_color="inverse")
+total_pedidos = len(df_f)
+faturamento = df_f["faturamento_pedido"].sum()
+taxa_atraso = df_f["flag_atraso"].mean() * 100
+atraso_medio = df_f.loc[df_f["flag_atraso"], "dias_atraso"].mean()
+taxa_cancel = (df_f["status_simplificado"] == "Cancelado").mean() * 100
 
-        st.markdown("---")
+col1.metric("📦 Pedidos", abreviar(total_pedidos))
+col2.metric("💰 Faturamento", f"R$ {abreviar(faturamento)}")
+col3.metric("🚨 Taxa de Atraso", f"{taxa_atraso:.1f}%")
+col4.metric("⏱️ Atraso Médio",
+            f"{0 if pd.isna(atraso_medio) else atraso_medio:.1f} dias")
+col5.metric("🚫 Cancelamento", f"{taxa_cancel:.1f}%")
 
-        # --- LINHA 2: GRÁFICOS DE NEGÓCIO ---
-        c_chart1, c_chart2 = st.columns(2)
+st.divider()
 
-        with c_chart1:
-            st.markdown("##### 💵 Custo de Frete por Estado (Top 10)")
-            if col_frete in df_filtered.columns:
-                df_frete = df_filtered.groupby('uf_cliente')[col_frete].mean(
-                ).reset_index().sort_values(col_frete, ascending=False).head(10)
+colA, colB = st.columns([1, 1.5])
 
-                fig_frete = px.bar(
-                    df_frete,
-                    x='uf_cliente',
-                    y=col_frete,
-                    text_auto='.2f',
-                    title="Onde o Frete é mais caro?",
-                    color=col_frete,
-                    color_continuous_scale='Blues'  # Escala Azul
-                )
-                st.plotly_chart(fig_frete, use_container_width=True)
-            else:
-                st.info("Coluna de valor de frete não encontrada.")
+with colA:
+    df_status = df_f["status_simplificado"].value_counts().reset_index()
+    df_status.columns = ["Status", "Pedidos"]
 
-        with c_chart2:
-            st.markdown("##### 📦 Status dos Pedidos")
-            if col_status in df_filtered.columns:
-                df_status = df_filtered[col_status].value_counts(
-                ).reset_index()
-                df_status.columns = ['Status', 'Qtd']
+    fig_status = px.pie(
+        df_status,
+        names="Status",
+        values="Pedidos",
+        hole=0.6,
+        color="Status",
+        color_discrete_map={
+            "Aprovado": PRIMARY,
+            "Em Processamento": "#fcca00",
+            "Cancelado": WARNING
+        }
+    )
 
-                # Gráfico de Rosca
-                fig_status = px.pie(
-                    df_status,
-                    values='Qtd',
-                    names='Status',
-                    hole=0.4,
-                    color_discrete_sequence=px.colors.sequential.RdBu
-                )
-                st.plotly_chart(fig_status, use_container_width=True)
-            else:
-                st.info("Coluna de status não encontrada.")
+    fig_status.update_layout(
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.25,
+            xanchor="center",
+            x=0.5
+        ),
+        margin=dict(t=60, b=60, l=10, r=10),
+        height=300
+    )
 
-        # --- LINHA 3: VISÃO DE PROBLEMAS (ATRASOS) ---
-        st.markdown("### 🚨 Raio-X dos Atrasos")
-        c_chart3, c_chart4 = st.columns(2)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.plotly_chart(fig_status, use_container_width=False,
+                    width=420, height=300)
 
-        with c_chart3:
-            st.markdown("##### Performance por Categoria (Piores)")
-            df_atraso_cat = df_filtered[df_filtered['dias_atraso'] >
-                                        0]['categoria_produto'].value_counts().head(10).reset_index()
-            df_atraso_cat.columns = ['Categoria', 'Qtd Atrasos']
+with colB:
+    with open("data/brazil_states.geojson", "r", encoding="utf-8") as f:
+        brazil_geojson = json.load(f)
 
-            fig_cat = px.bar(
-                df_atraso_cat,
-                x='Qtd Atrasos',
-                y='Categoria',
-                orientation='h',
-                color_discrete_sequence=['#ff4b4b']  # Vermelho alerta
-            )
-            fig_cat.update_layout(yaxis=dict(autorange="reversed"))
-            st.plotly_chart(fig_cat, use_container_width=True)
+    df_geo = (
+        df_f[df_f["dias_atraso"] > 0]
+        .groupby("uf_cliente")
+        .agg(
+            pedidos=("pedido_id", "count"),
+            atraso_medio=("dias_atraso", "mean")
+        )
+        .reset_index()
+    )
 
-        with c_chart4:
-            st.markdown("##### Mapa de Calor (Média de Atraso)")
-            df_mapa = df_filtered.groupby('uf_cliente')[
-                'dias_atraso'].mean().reset_index()
-            fig_map = px.choropleth(
-                df_mapa,
-                geojson="https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson",
-                featureidkey="properties.sigla",
-                locations="uf_cliente",
-                color="dias_atraso",
-                color_continuous_scale="Reds",
-                scope="south america",
-                center={"lat": -14.2350, "lon": -51.9253}
-            )
-            fig_map.update_geos(fitbounds="locations", visible=False)
-            st.plotly_chart(fig_map, use_container_width=True)
+    fig_map = px.choropleth(
+        df_geo,
+        geojson=brazil_geojson,
+        locations="uf_cliente",
+        featureidkey="properties.sigla",
+        color="atraso_medio",
+        color_continuous_scale="Reds"
+    )
 
-# --- ABA 2: SIMULADOR ---
-with tab2:
-    st.markdown("### 🤖 Simulador Preditivo")
-    st.info("Este módulo utiliza Inteligência Artificial para prever riscos em novos pedidos antes que eles aconteçam.")
+    fig_map.update_geos(fitbounds="locations", visible=False)
+    fig_map.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=0, r=0, t=60, b=0),
+        height=300
+    )
 
-    with st.form("simulador"):
-        col_a, col_b, col_c = st.columns(3)
+    st.plotly_chart(fig_map, use_container_width=True)
 
-        with col_a:
-            origem = st.selectbox("📍 Origem (Vendedor)",
-                                  TODOS_ESTADOS, index=24)  # Default SP
-            destino = st.selectbox("🏠 Destino (Cliente)",
-                                   TODOS_ESTADOS, index=18)  # Default RJ
-            prazo = st.number_input("📅 Prazo Prometido (Dias)", 1, 90, 7)
+col1, col2 = st.columns(2)
 
-        with col_b:
-            lista_cats = sorted(df['categoria_produto'].astype(
-                str).unique()) if df is not None else ['outros']
-            cat = st.selectbox("📦 Categoria", lista_cats)
-            peso = st.number_input("⚖️ Peso (gramas)", 10, 30000, 500)
-            aprovacao = st.number_input("⏳ Tempo Aprovação (Dias)", 0, 15, 0)
+with col1:
+    df_fat_estado = (
+        df_f.groupby("uf_cliente")["faturamento_pedido"]
+        .sum()
+        .reset_index()
+        .sort_values("faturamento_pedido", ascending=False)
+        .head(10)
+    )
 
-        with col_c:
-            st.write("📐 **Dimensões (cm)**")
-            comp = st.number_input("Comprimento", 1, 200, 20)
-            larg = st.number_input("Largura", 1, 200, 20)
-            alt = st.number_input("Altura", 1, 200, 10)
-            pickup = st.checkbox("Retirada em Loja?")
+    fig_fat = px.bar(
+        df_fat_estado,
+        x="uf_cliente",
+        y="faturamento_pedido",
+        title="Top 10 Estados por Faturamento"
+    )
+    st.plotly_chart(fig_fat, use_container_width=True)
 
-        btn_calc = st.form_submit_button("🔮 Calcular Previsão")
+with col2:
+    df_cancel_estado = (
+        df_f.assign(cancel=lambda x: x["status_simplificado"] == "Cancelado")
+        .groupby("uf_cliente")["cancel"]
+        .mean()
+        .reset_index()
+    )
 
-    if btn_calc:
-        # 1. Preparar Dados
-        vol = comp * larg * alt
-        peso_cub = vol / 6000
+    fig_cancel = px.bar(
+        df_cancel_estado,
+        x="uf_cliente",
+        y="cancel",
+        title="Taxa de Cancelamento por Estado"
+    )
+    st.plotly_chart(fig_cancel, use_container_width=True)
 
-        entrada = pd.DataFrame([{
-            'peso_cubado_kg': peso_cub,
-            'vol_cm3': vol,
-            'peso_produto_g': peso,
-            'tempo_aprovacao': aprovacao,
-            'prazo_prometido': prazo,
-            'uf_vendedor': origem,
-            'uf_cliente': destino,
-            'flag_pickup': 1 if pickup else 0,
-            'categoria_produto': cat
-        }])
+st.divider()
 
-        # 2. Previsão
-        try:
-            dias_pred = model.predict(entrada)[0]
+st.markdown("### ⚙️ SLA — Atraso Médio por Categoria")
 
-            st.divider()
-            c_res1, c_res2 = st.columns([1, 2])
+colA, colB = st.columns(2)
 
-            with c_res1:
-                if dias_pred > 0:
-                    st.error("⚠️ Risco de Atraso")
-                    st.metric("Estimativa", f"+{dias_pred:.1f} dias")
-                else:
-                    st.success("✅ Dentro do Prazo")
-                    st.metric("Folga Estimada", f"{abs(dias_pred):.1f} dias")
+with colA:
+    df_sla = (
+        df_f[df_f["dias_atraso"] > 0]
+        .groupby("categoria_produto")["dias_atraso"]
+        .mean()
+        .reset_index()
+        .sort_values("dias_atraso", ascending=False)
+        .head(10)
+    )
 
-            with c_res2:
-                total = prazo + dias_pred
-                st.markdown(
-                    f"**Análise:** O produto deve chegar em **{total:.1f} dias** totais.")
-                if dias_pred > 0:
-                    st.warning(
-                        "Recomendação: Revise o prazo prometido ou utilize envio expresso.")
-                else:
-                    st.info("Recomendação: Operação segura. Risco baixo.")
+    fig_sla = px.bar(
+        df_sla,
+        x="dias_atraso",
+        y="categoria_produto",
+        orientation="h",
+        title="Atraso Médio por Categoria (dias)"
+    )
 
-        except Exception as e:
-            st.error(f"Erro no modelo: {e}")
+    fig_sla.update_layout(yaxis=dict(autorange="reversed"))
+    st.plotly_chart(fig_sla, use_container_width=True)
+
+with colB:
+    df_proc_cat = (
+        df_f[
+            df_f["tempo_processamento"].notna() &
+            (df_f["tempo_processamento"] >= 0)
+        ]
+        .groupby("categoria_produto")["tempo_processamento"]
+        .mean()
+        .reset_index()
+        .sort_values("tempo_processamento", ascending=False)
+        .head(10)
+    )
+
+    fig_proc_cat = px.bar(
+        df_proc_cat,
+        x="tempo_processamento",
+        y="categoria_produto",
+        orientation="h",
+        title="Tempo Médio de Processamento por Categoria (dias)"
+    )
+
+    st.plotly_chart(fig_proc_cat, use_container_width=True)
