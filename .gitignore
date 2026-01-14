@@ -1,12 +1,23 @@
-# Ignorar ambiente virtual
-.venv/
+# --- Segurança (Credenciais) ---
+kaggle.json
+.env
+config.json
 
-# Ignorar arquivos temporários
+# --- Python & Ambiente Virtual ---
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-*.swp
-*.swo
+.venv/
+venv/
+env/
+
+# --- Jupyter Notebooks ---
 .ipynb_checkpoints/
+
+# --- IDEs e Sistema ---
+.vscode/
+.idea/
+.DS_Store
+
+# Ignorar arquivos de modelo pesados
 *.pkl
+models/*.pkl
