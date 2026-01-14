@@ -1,103 +1,152 @@
+from utils.utils import enriquecer_dados_dash, map_cat_correcao
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import json
 import joblib
 import numpy as np
-from utils.utils import enriquecer_dados_dash, map_cat_correcao
+import os
+import sys
+
+sys.path.append(os.path.abspath('.'))
 
 # ==============================================================================
-# 1. CONFIGURAÇÃO DA PÁGINA
+# 1. CONFIGURAÇÃO DA PÁGINA E ESTILO
 # ==============================================================================
 st.set_page_config(
-    page_title="Olist Logistica Centro de Comando",
+    page_title="Olist Logistica Control Tower",
     page_icon="🚚",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.sidebar.image(
-    "https://d3hw41hpah8tvx.cloudfront.net/images/logo_ecossistema_66f532e37b.svg",
-    width=180
-)
-
-PRIMARY = "#202652"
+# Cores do Tema
+PRIMARY = "#0B16B3"
+SECONDARY = "#583a89"
 WARNING = "#ff4b4b"
 
+# CSS Personalizado para métricas e títulos
 st.markdown(f"""
 <style>
-div[data-testid="metric-container"] {{
-    background-color: #ffffff;
-    padding: 15px;
-    border-radius: 10px;
-    border-left: 5px solid {PRIMARY};
-    box-shadow: 2px 2px 5px rgba(0,0,0,0.08);
-}}
-h1, h2, h3 {{ color: {PRIMARY}; }}
-/* Força cor branca em textos de gráficos se houver conflito */
-g.pointtext {{ fill: white !important; }}
+    /* Estilo dos Cards de Métricas */
+    div[data-testid="metric-container"] {{
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid {PRIMARY};
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.08);
+    }}
+    /* Títulos Coloridos */
+    h1, h2, h3 {{ color: {PRIMARY}; }}
+    
+    /* Ajuste para textos em fundo escuro nos gráficos Plotly */
+    g.pointtext {{ fill: white !important; }}
+    
+    /* Botões */
+    div.stButton > button {{
+        background-color: {PRIMARY};
+        color: white;
+        border-radius: 8px;
+        width: 100%;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
+# ==============================================================================
+# 2. CARREGAMENTO DE DADOS E MODELO (CACHED)
+# ==============================================================================
 
-# ==============================================================================
-# 2. CARREGAMENTO DE DADOS E MODELO
-# ==============================================================================
+
 @st.cache_data
 def load_data():
-    # 1. Carrega os dados brutos
+    """Carrega e trata os dados para o Dashboard."""
+    caminho_dados = "data/data_dashboard_processed.csv"
+
+    if not os.path.exists(caminho_dados):
+        st.error(f"Arquivo não encontrado: {caminho_dados}")
+        return pd.DataFrame()
+
     df = pd.read_csv(
-        "data/data_dashboard_processed.csv",
+        caminho_dados,
         parse_dates=["data_aprovacao", "data_postagem"]
     )
 
-    # 2. Aplica o tratamento centralizado (utils)
-    df = enriquecer_dados_dash(df)
+    # Aplica o tratamento de categorias
+    if 'status_simplificado' not in df.columns:
+        df = enriquecer_dados_dash(df)
 
     return df
 
 
 @st.cache_resource
 def load_model():
-    return joblib.load('models/modelo_previsao_atraso_olist.pkl')
+    """Carrega o modelo treinado."""
+    caminho_modelo = 'models/modelo_previsao_atraso_olist.pkl'
+    if not os.path.exists(caminho_modelo):
+        st.error("Modelo não encontrado. Verifique a pasta 'models'.")
+        return None
+    return joblib.load(caminho_modelo)
 
 
 df = load_data()
 model = load_model()
 
 # ==============================================================================
-# 3. PREPARAÇÃO AUXILIAR
+# 3. PREPARAÇÃO DE MAPEAMENTOS AUXILIARES
 # ==============================================================================
 if not df.empty and 'categoria_label' in df.columns:
     mapa_reverso_categorias = dict(
         zip(df['categoria_label'], df['categoria_produto']))
 else:
+    # Fallback caso não tenha a coluna label
     mapa_reverso_categorias = {
         cat: cat for cat in df['categoria_produto'].unique()}
 
+
+def abreviar_valor(valor):
+    """Formata números grandes (1M, 1K)."""
+    if valor >= 1_000_000:
+        return f"{valor/1_000_000:.1f}M"
+    if valor >= 1_000:
+        return f"{valor/1_000:.1f}K"
+    return f"{valor:.0f}"
+
+
 # ==============================================================================
-# 4. SIDEBAR
+# 4. SIDEBAR (FILTROS)
 # ==============================================================================
+st.sidebar.image(
+    "https://d3hw41hpah8tvx.cloudfront.net/images/logo_ecossistema_66f532e37b.svg",
+    width=180
+)
+st.sidebar.divider()
 st.sidebar.header("Filtros Globais")
 
-status_options = sorted(df["status_simplificado"].astype(str).unique())
-status_sel = st.sidebar.multiselect("Status do Pedido", status_options)
+# Filtro 1: Status
+if not df.empty:
+    status_options = sorted(df["status_simplificado"].astype(str).unique())
+    status_sel = st.sidebar.multiselect("Status do Pedido", status_options)
 
-estados_sel = st.sidebar.multiselect(
-    "Estado do Cliente", sorted(df["uf_cliente"].unique()))
+    # Filtro 2: Estado
+    estados_options = sorted(df["uf_cliente"].unique())
+    estados_sel = st.sidebar.multiselect("Estado do Cliente", estados_options)
 
-cat_options = sorted(df["categoria_label"].unique())
-cat_sel = st.sidebar.multiselect("Categoria de Produto", cat_options)
+    # Filtro 3: Categoria
+    cat_options = sorted(df["categoria_label"].unique())
+    cat_sel = st.sidebar.multiselect("Categoria de Produto", cat_options)
 
-# Aplicando Filtros
-df_f = df.copy()
+    # Aplicação dos Filtros
+    df_f = df.copy()
 
-if status_sel:
-    df_f = df_f[df_f["status_simplificado"].isin(status_sel)]
-if estados_sel:
-    df_f = df_f[df_f["uf_cliente"].isin(estados_sel)]
-if cat_sel:
-    df_f = df_f[df_f["categoria_label"].isin(cat_sel)]
+    if status_sel:
+        df_f = df_f[df_f["status_simplificado"].isin(status_sel)]
+    if estados_sel:
+        df_f = df_f[df_f["uf_cliente"].isin(estados_sel)]
+    if cat_sel:
+        df_f = df_f[df_f["categoria_label"].isin(cat_sel)]
+else:
+    st.sidebar.warning("Sem dados carregados.")
+    df_f = pd.DataFrame()
 
 
 def abreviar(valor):
@@ -108,8 +157,10 @@ def abreviar(valor):
     return f"{valor:.0f}"
 
 
+st.sidebar.info(f"Visualizando {len(df_f)} pedidos filtrados.")
+
 # ==============================================================================
-# 5. ABAS DA APLICAÇÃO
+# 5. ESTRUTURA DE ABAS
 # ==============================================================================
 tab_analise, tab_previsao = st.tabs(
     ["📊 Visão Geral da Operação", "🔮 Simulador de Atraso (IA)"])
@@ -153,7 +204,7 @@ with tab_analise:
             color="Status",
             color_discrete_map={
                 "Aprovado": PRIMARY,
-                "Em Processamento": "#fcca00",
+                "Em Processamento": SECONDARY,
                 "Cancelado": WARNING,
             }
         )
@@ -162,11 +213,11 @@ with tab_analise:
                         y=-0.25, xanchor="center", x=0.5),
             margin=dict(t=60, b=60, l=10, r=10),
             height=300,
-            font=dict(color='white'),  # Título e legendas brancos
+            font=dict(color='white'),
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)'
         )
-        fig_status.update_traces(textfont_color='white')  # Rótulos brancos
+        fig_status.update_traces(textfont_color='white')
         st.plotly_chart(fig_status, use_container_width=True)
 
     with colB:
@@ -217,7 +268,7 @@ with tab_analise:
 
         fig_fat.update_traces(marker_color=PRIMARY, textfont_color='white')
         fig_fat.update_layout(
-            xaxis_title=None, yaxis_title=None,  # Remove legendas X/Y
+            xaxis_title=None, yaxis_title=None,
             font=dict(color='white'),
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)'
@@ -289,79 +340,175 @@ with tab_analise:
         st.plotly_chart(fig_proc_cat, use_container_width=True)
 
 # ------------------------------------------------------------------------------
-# ABA 2: SIMULADOR DE PREVISÃO
+# ABA 2: SIMULADOR DE PREVISÃO (VERSÃO FINAL COM REGRAS REGIONAIS)
 # ------------------------------------------------------------------------------
 with tab_previsao:
     st.markdown("### 🧠 Simulador de Risco de Atraso")
-    st.info("Preencha os dados abaixo para simular o risco de um novo pedido.")
+    st.info(
+        "Utilize este formulário para simular um novo pedido e prever o risco de entrega.")
 
-    TODOS_ESTADOS = sorted(['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS',
-                            'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'])
+    if model is None:
+        st.error(
+            "Modelo não carregado. Verifique se o arquivo .pkl existe na pasta models.")
+    else:
+        TODOS_ESTADOS = sorted(['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS',
+                                'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'])
 
-    with st.form("simulador"):
-        c1, c2, c3 = st.columns(3)
+        # Garante que temos categorias para exibir
+        lista_categorias = sorted(mapa_reverso_categorias.keys(
+        )) if mapa_reverso_categorias else ["Outros"]
 
-        with c1:
-            origem = st.selectbox("📍 Origem", TODOS_ESTADOS, index=24)
-            destino = st.selectbox("🏠 Destino", TODOS_ESTADOS, index=18)
-            prazo = st.number_input("📅 Prazo (Dias)", 1, 90, 7)
+        with st.form("simulador_form"):
+            st.markdown("#### Dados do Pedido")
+            c1, c2, c3 = st.columns(3)
 
-        with c2:
-            cat_label = st.selectbox("📦 Categoria", sorted(
-                mapa_reverso_categorias.keys()))
-            peso = st.number_input("⚖️ Peso (g)", 10, 30000, 500)
-            aprovacao = st.number_input("⏳ Aprov. (Dias)", 0, 15, 0)
+            with c1:
+                origem = st.selectbox(
+                    # BA default
+                    "📍 Origem (Vendedor)", TODOS_ESTADOS, index=4)
+                destino = st.selectbox(
+                    # RJ default
+                    "🏠 Destino (Cliente)", TODOS_ESTADOS, index=18)
+                prazo = st.number_input(
+                    "📅 Prazo Prometido (Dias)", min_value=1, max_value=90, value=7)
 
-        with c3:
-            st.write("📐 **Dimensões (cm)**")
-            comp = st.number_input("Comprimento", 1, 200, 20)
-            larg = st.number_input("Largura", 1, 200, 20)
-            alt = st.number_input("Altura", 1, 200, 10)
-            pickup = st.checkbox("Pickup?")
+            with c2:
+                cat_label = st.selectbox("📦 Categoria", lista_categorias)
+                peso = st.number_input(
+                    "⚖️ Peso (g)", min_value=10, max_value=100000, value=500, step=100)
+                aprovacao = st.number_input(
+                    "⏳ Tempo Aprovação (Dias)", min_value=0, max_value=30, value=0)
 
-        btn_calc = st.form_submit_button("🔮 Calcular Previsão")
+            with c3:
+                st.write("📐 **Dimensões (cm)**")
+                cc1, cc2, cc3 = st.columns(3)
+                comp = cc1.number_input("Comp", 1, 200, 20)
+                larg = cc2.number_input("Larg", 1, 200, 20)
+                alt = cc3.number_input("Alt", 1, 200, 10)
+                pickup = st.checkbox("Pickup em Loja?", value=False)
 
-    if btn_calc:
-        cat_tecnica = mapa_reverso_categorias[cat_label]
+            st.write("")
+            btn_calc = st.form_submit_button("🚀 Calcular Previsão")
 
-        vol = comp * larg * alt
-        peso_cub = vol / 6000
+        if btn_calc:
+            try:
+                # 1. Preparar Input para o Modelo
+                # Se não encontrar a categoria, usa a própria string (fallback)
+                cat_tecnica = mapa_reverso_categorias.get(cat_label, cat_label)
 
-        entrada = pd.DataFrame([{
-            'peso_cubado_kg': peso_cub,
-            'vol_cm3': vol,
-            'peso_produto_g': peso,
-            'tempo_aprovacao': aprovacao,
-            'prazo_prometido': prazo,
-            'uf_vendedor': origem,
-            'uf_cliente': destino,
-            'flag_pickup': 1 if pickup else 0,
-            'categoria_produto': cat_tecnica
-        }])
+                vol = comp * larg * alt
+                peso_cub = vol / 6000
 
-        try:
-            dias_pred = model.predict(entrada)[0]
+                entrada = pd.DataFrame([{
+                    'peso_cubado_kg': peso_cub,
+                    'vol_cm3': vol,
+                    'peso_produto_g': peso,
+                    'tempo_aprovacao': aprovacao,
+                    'prazo_prometido': prazo,
+                    'uf_vendedor': origem,
+                    'uf_cliente': destino,
+                    'flag_pickup': 1 if pickup else 0,
+                    'categoria_produto': cat_tecnica
+                }])
 
-            st.divider()
-            c_res1, c_res2 = st.columns([1, 2])
+                # 2. O Modelo Estatístico faz a previsão
+                dias_pred_modelo = model.predict(entrada)[0]
 
-            with c_res1:
-                if dias_pred > 0:
-                    st.error("⚠️ Risco de Atraso")
-                    st.metric("Atraso Estimado", f"+{dias_pred:.1f} dias")
+                # ==========================================================
+                # 3. GUARDRAILS (Regras de Negócio e Lógica Física)
+                # ==========================================================
+
+                # Mapeamento de Macro-Regiões
+                regioes_map = {
+                    'AC': 'N', 'AL': 'NE', 'AP': 'N', 'AM': 'N', 'BA': 'NE',
+                    'CE': 'NE', 'DF': 'CO', 'ES': 'SE', 'GO': 'CO', 'MA': 'NE',
+                    'MT': 'CO', 'MS': 'CO', 'MG': 'SE', 'PA': 'N', 'PB': 'NE',
+                    'PR': 'S', 'PE': 'NE', 'PI': 'NE', 'RJ': 'SE', 'RN': 'NE',
+                    'RS': 'S', 'RO': 'N', 'RR': 'N', 'SC': 'S', 'SP': 'SE',
+                    'SE': 'NE', 'TO': 'N'
+                }
+
+                reg_origem = regioes_map.get(origem, 'Outro')
+                reg_destino = regioes_map.get(destino, 'Outro')
+
+                # Definição de Tempo Mínimo de Transporte (SLA Físico)
+                if origem == destino:
+                    tempo_transporte_min = 1
+                    tipo_rota = "Local"
+                elif reg_origem == reg_destino:
+                    tempo_transporte_min = 4
+                    tipo_rota = "Regional"
+                # Se envolve o Norte (AM, AP, etc)
+                elif 'N' in [reg_origem, reg_destino]:
+                    tempo_transporte_min = 12
+                    tipo_rota = "Nacional (Difícil Acesso)"
                 else:
-                    st.success("✅ Entrega no Prazo")
-                    st.metric("Margem", f"{abs(dias_pred):.1f} dias")
+                    tempo_transporte_min = 5
+                    tipo_rota = "Nacional"
 
-            with c_res2:
-                total_dias = prazo + dias_pred
-                st.markdown(
-                    f"**Análise:** O pedido deve chegar em **{total_dias:.1f} dias** totais.")
+                # Cálculo do Tempo Total Mínimo Realista
+                tempo_total_minimo = aprovacao + tempo_transporte_min
+                atraso_fisico = tempo_total_minimo - prazo
 
-                if dias_pred > 0:
-                    st.warning("Recomendação: Aumente o prazo prometido.")
-                else:
-                    st.info("Operação segura.")
+                # A "Previsão Final" é o maior valor entre o que o modelo achou e a física
+                dias_pred_final = max(dias_pred_modelo, atraso_fisico)
 
-        except Exception as e:
-            st.error(f"Erro ao processar previsão: {e}")
+                # Verifica se houve intervenção da regra
+                foi_ajustado = dias_pred_final > dias_pred_modelo
+
+                # ==========================================================
+                # 4. EXIBIÇÃO
+                # ==========================================================
+                st.divider()
+                c_res1, c_res2 = st.columns([1, 2])
+
+                total_dias_estimados = prazo + dias_pred_final
+
+                with c_res1:
+                    st.markdown("#### Resultado")
+                    if dias_pred_final > 0:
+                        st.error(f"⚠️ RISCO DE ATRASO")
+                        st.metric("Atraso Estimado",
+                                  f"+{dias_pred_final:.1f} dias")
+                        if foi_ajustado:
+                            st.caption(
+                                f"ℹ️ Ajustado por regra logística ({origem}→{destino}).")
+                    else:
+                        st.success("✅ ENTREGA NO PRAZO")
+                        st.metric("Margem", f"{abs(dias_pred_final):.1f} dias")
+
+                with c_res2:
+                    st.markdown("#### Diagnóstico Inteligente")
+
+                    if dias_pred_final > 0:
+                        analise_texto = (
+                            f"O pedido é crítico. Além dos **{aprovacao} dias** de aprovação, "
+                            f"a rota **{origem} ➝ {destino}** ({tipo_rota}) exige tempo de trânsito elevado. "
+                            f"Estimativa total: **{total_dias_estimados:.1f} dias**."
+                        )
+                    else:
+                        analise_texto = (
+                            f"Operação segura. Rota **{tipo_rota}** com prazo confortável. "
+                            f"Estimativa total: **{total_dias_estimados:.1f} dias**."
+                        )
+
+                    st.info(analise_texto)
+
+                    # Gráfico de análise das etapas
+                    dados_grafico = pd.DataFrame({
+                        'Etapa': ['Aprovação', 'Transporte', 'Prazo Limite'],
+                        'Dias': [aprovacao, max(0, total_dias_estimados - aprovacao), prazo],
+                        'Cor': ['#808080', PRIMARY, WARNING]
+                    })
+
+                    fig_breakdown = px.bar(
+                        dados_grafico,
+                        x='Dias', y='Etapa', orientation='h', text_auto='.1f',
+                        color='Cor', color_discrete_map="identity"
+                    )
+                    fig_breakdown.update_layout(height=250, margin=dict(
+                        l=0, r=0, t=0, b=0), showlegend=False)
+                    st.plotly_chart(fig_breakdown, use_container_width=True)
+
+            except Exception as e:
+                st.error(f"Erro ao processar a previsão: {e}")
