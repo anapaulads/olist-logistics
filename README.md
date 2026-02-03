@@ -15,17 +15,17 @@ A **Olist** atua como uma grande loja de departamentos dentro de marketplaces, c
 ---
 
 ## 🛠️ Pipeline do Projeto (Metodologia)
-O projeto segue o ciclo de vida completo de Ciência de Dados (CRISP-DM):
+O projeto segue o ciclo de vida completo de Ciência de Dados:
 
 ### 1. Engenharia de Dados (ETL)
 * **Fonte:** Dados públicos do E-commerce Brasileiro (Kaggle).
 * **Limpeza Avançada:**
     * Tratamento cronológico: Remoção de inconsistências (ex: entregas registradas antes da compra).
-    * Segmentação de Nulos: Diferenciação entre pedidos em andamento (WIP) e erros sistêmicos (Ruído).
+    * Segmentação de Nulos: Diferenciação entre pedidos em andamento e erros sistêmicos (Ruído).
 * **Feature Engineering:** Criação de variáveis como `volume_cubico`, `tempo_aprovacao` e `densidade_rota`.
 
 ### 2. Análise Exploratória (Insights) 📊
-Aprofundando nos dados, descobrimos padrões cruciais para a operação:
+Aprofundando nos dados, descobri padrões cruciais para a operação:
 * **Desigualdade Regional:** Enquanto o Sudeste opera com prazos otimizados, regiões Norte e Nordeste apresentam SLA de entrega até **3x maior**, sugerindo a necessidade de CDs (Centros de Distribuição) locais.
 * **O "Gargalo Invisível":** Pedidos com longo `tempo_aprovacao` (pagamento/análise de crédito) têm correlação direta com atrasos na entrega. O relógio logístico começa a correr, mas o produto fica parado.
 * **Impacto de Categorias:** Itens de "Móveis e Decoração" possuem alto índice de sinistro logístico devido à complexidade de cubagem e peso, exigindo transportadoras especializadas.
@@ -37,10 +37,21 @@ Aprofundando nos dados, descobrimos padrões cruciais para a operação:
 * **Modelo Campeão:** `RandomForestRegressor`.
 * **Performance:** O modelo alcançou um MAE (Erro Médio Absoluto) competitivo, capaz de diferenciar com precisão rotas de risco (ex: SP -> AM) de rotas seguras (ex: SP -> SP).
 
+### 3.1 Otimização de Hiperparâmetros (Fine-Tuning) 🧠
+Para elevar a performance do modelo, implementei uma etapa de ajuste fino utilizando `RandomizedSearchCV`. Esta abordagem permitiu explorar um vasto espaço de parâmetros de forma computacionalmente eficiente.
+
+* **Estratégia:** Comparei o desempenho de **Random Forest** e **XGBoost** através de validação cruzada (`3-fold CV`).
+* **Métrica Primária:** Otimizei os modelos com foco no **MAE (Erro Médio Absoluto)**. Diferente do RMSE, o MAE é mais robusto a outliers e oferece uma interpretação direta para o negócio: a média de dias de erro na previsão da entrega.
+* **Resultado do Tuning:** * **Random Forest (Campeão):** Reduziu o erro para **4.76 dias**.
+    * **XGBoost:** Apresentou um erro residual de **4.85 dias**.
+* **Melhores Parâmetros (RF):** `n_estimators: 200`, `min_samples_leaf: 2`, `max_depth: 30`.
+
+> **Insight Técnico:** A Random Forest otimizada mostrou-se superior para este volume de dados, lidando melhor com a alta dimensionalidade gerada pelo tratamento de rotas logísticas complexas.
+
 ### 4. Deploy (Aplicação Final)
 Desenvolvimento de uma Web App em **Streamlit** simulando uma ferramenta de gestão:
 * **Simulador:** O usuário insere origem, destino e dimensões; o modelo retorna a previsão de dias em tempo real.
-* **Arquitetura:** Uso de `utils.py` para modularização e garantia de consistência entre o treinamento e a aplicação (Training-Serving Skew prevention).
+* **Arquitetura:** Uso de `utils.py` para modularização e garantia de consistência entre o treinamento e a aplicação.
 
 ---
 
@@ -48,34 +59,63 @@ Desenvolvimento de uma Web App em **Streamlit** simulando uma ferramenta de gest
 
 ### Pré-requisitos
 * Python 3.9 ou superior.
+* Git (recomendado ter Git LFS instalado para baixar o modelo).
 * Conta no Kaggle (para download dos dados).
 
-### Passo 1: Instalação
-Clone o repositório e instale as dependências:
+### Passo 1: Clonar o Repositório
 ```bash
 git clone [https://github.com/anapaulads/anapaulads-Analise-e-Modelagem-Preditiva-de-Performance-Logistica.git](https://github.com/anapaulads/anapaulads-Analise-e-Modelagem-Preditiva-de-Performance-Logistica.git)
-cd olist-logistics
+cd anapaulads-Analise-e-Modelagem-Preditiva-de-Performance-Logistica
+```
+
+### Passo 2: Criar Ambiente Virtual (Recomendado)
+É altamente recomendado criar um ambiente virtual para isolar as dependências:
+
+**Windows:**
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+**Linux/Mac:**
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+### Passo 3: Instalar Dependências
+Escolha a opção adequada para o seu objetivo:
+
+**Opção A: Apenas rodar o Dashboard (Modo Produção/Leve)**
+Use este comando se quiser apenas visualizar a aplicação rodando (igual ao servidor).
+```bash
 pip install -r requirements.txt
 ```
 
-### Passo 2: Configuração da API Kaggle (Dados)
-Este projeto baixa os dados brutos automaticamente. Para isso, você precisa da chave de API:
-Para que o download automático dos dados funcione:
-1. Crie uma conta no Kaggle.
-2. Vá em 'Settings' > 'API' > 'Create New Token'.
-3. Um arquivo `kaggle.json` será baixado.
-4. Coloque esse arquivo na pasta raiz deste projeto. 
+**Opção B: Desenvolvimento Completo (Modo Dev)**
+Use este comando se quiser rodar os Jupyter Notebooks, re-treinar modelos e contribuir com o código.
+```bash
+pip install -r requirements-dev.txt
+```
 
-### Passo 3: Executando
-Para abrir o Dashboard no seu navegador:
+### Passo 4: Configuração da API Kaggle (Dados)
+Este projeto baixa os dados brutos automaticamente via API. Para configurar:
+1. Crie uma conta no [Kaggle](https://www.kaggle.com/).
+2. Vá em **Settings** > **API** > **Create New Token**.
+3. Um arquivo `kaggle.json` será baixado.
+4. **Coloque esse arquivo na pasta raiz deste projeto.**
+
+### Passo 5: Executando
+Com tudo configurado, inicie o Dashboard:
 ```bash
 streamlit run app.py
 ```
+O navegador abrirá automaticamente em `http://localhost:8501`.
 
 ## 🗂 Estrutura de Arquivos
 ```text
 ├── data/                  # Armazena os CSVs (Ignorado no Git, baixado via script)
-├── models/                # Modelo treinado (.pkl) (Ignorado no Git)
+├── models/                # Modelo treinado (.pkl)
 ├── notebooks/             # Jupyter Notebooks de desenvolvimento
 │   ├── ETL_EDA_Logistics_Analytics.ipynb
 │   └── Modelagem_Logistica.ipynb
@@ -84,6 +124,7 @@ streamlit run app.py
 ├── app.py                 # Aplicação Streamlit (Dashboard + Simulador)
 ├── kaggle.json            # Credenciais do Kaggle (Adicione o seu aqui)
 ├── requirements.txt       # Bibliotecas necessárias para rodar o projeto
+├── requirements-dev.txt   # Bibliotecas necessárias para rodar o projeto
 └── README.md              # Documentação do projeto
 ```
 
@@ -95,9 +136,9 @@ Sinta-se à vontade para abrir issues ou pull requests.
 
 **Ana Paula Dias** *Data Scientist | Data Analyst*
 
-Entre em contacto para discutir este projeto ou oportunidades:
+Entre em contato para discutir este projeto ou oportunidades:
 
-[![LinkedIn](https://img.shields.io/badge/-LinkedIn-blue?style=flat-square&logo=Linkedin&logoColor=white)]([SEU_URL_DO_LINKEDIN_AQUI](https://www.linkedin.com/in/anapauladss/))
+[![LinkedIn](https://img.shields.io/badge/-LinkedIn-blue?style=flat-square&logo=Linkedin&logoColor=white)](https://www.linkedin.com/in/anapauladss/)
 [![Gmail](https://img.shields.io/badge/-Gmail-c14438?style=flat-square&logo=Gmail&logoColor=white)](mailto:contato.paulla@outlook.com)
 
 ---
