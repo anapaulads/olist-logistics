@@ -1,9 +1,36 @@
 # 🚚 Olist Logistica Centro de Comando (End-to-End Data Science Project)
 
-![Status](https://img.shields.io/badge/Status-Concluído-green) ![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![Streamlit](https://img.shields.io/badge/Streamlit-App-red) ![Machine Learning](https://img.shields.io/badge/Model-RandomForest-orange)
+![Status](https://img.shields.io/badge/Status-Concluído-green) ![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![Streamlit](https://img.shields.io/badge/Streamlit-App-red) ![Machine Learning](https://img.shields.io/badge/Model-RandomForest-orange) 
 
 > 🚀 **Destaques do Projeto:** Este portfólio demonstra domínio em **Full-Stack Data Science**: da engenharia de dados (ETL robusto e Feature Engineering) à construção de pipelines de **Machine Learning** e **Deploy** de aplicações web. Evidencia forte capacidade analítica em **Supply Chain & Logística**, aliada a boas práticas de **Engenharia de Software** (modularização, código limpo e controle de versão), provando aptidão para resolver problemas de negócio complexos de ponta a ponta.
+---
 
+## 🟢 Acesse a Aplicação Online
+
+Interaja com o Dashboard e o Simulador em tempo real (sem instalações):
+
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://olist-logistics.streamlit.app/)
+*(Nota: O carregamento inicial pode levar alguns segundos devido ao "cold start" do servidor gratuito)*
+
+---
+
+## 📸 Visão Geral da Solução
+
+### 1. Dashboard de Controle Operacional
+Monitoramento de KPIs críticos como **Loss Rate**, **Atraso Médio** e **Heatmap de Gargalos Logísticos** no Brasil.
+
+![Dashboard Overview](assets/visao_geral.gif)  
+*(Visão geral da Aba 1: Métricas e Mapas)*
+
+### 2. Simulador Preditivo com "Smart Guardrails" 🧠
+Diferente de modelos tradicionais, este simulador combina **Random Forest** com **Regras de Negócio (Logística Regional)**.
+* **O Modelo:** Prevê o tempo estatístico baseado no histórico.
+* **O Guardrail:** O sistema valida se a rota (ex: Sul -> Norte) respeita o tempo físico mínimo (Logística Complexa), evitando "alucinações" da IA em rotas longas.
+
+![Simulador AI](assets/Simulador.png)  
+*(Visão da Aba 2: Previsão de risco com gráfico waterfall explicativo)*
+
+---
 ## 💼 Contexto e Problema de Negócio
 A **Olist** atua como uma grande loja de departamentos dentro de marketplaces, conectando pequenas empresas a clientes finais. Nesse modelo, a logística é descentralizada e complexa.
 
