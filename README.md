@@ -141,6 +141,7 @@ O navegador abrirá automaticamente em `http://localhost:8501`.
 
 ## 🗂 Estrutura de Arquivos
 ```text
+├── assets/                # Imagens do README
 ├── data/                  # Armazena os CSVs (Ignorado no Git, baixado via script)
 ├── models/                # Modelo treinado (.pkl)
 ├── notebooks/             # Jupyter Notebooks de desenvolvimento
